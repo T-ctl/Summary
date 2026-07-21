@@ -43,8 +43,6 @@
         .modal label { display: inline-block; width: 120px; }
         .modal select, .modal input { padding: 5px; margin: 5px 0; width: 200px; }
         .free-row { background-color: #f9f9f9; }
-        .discharged-row { background-color: #fffbeb; }
-        .highlight-return { background-color: #dbeafe; }
         .journal-total { font-weight: bold; background-color: #e6f0ff; }
         .fio-list { font-size: 12px; line-height: 1.4; }
     </style>
@@ -56,10 +54,13 @@
         <h2>🐱 Вход в систему КИИ-Сводка</h2>
         <p style="font-size:13px; color:#666;">Выберите учётную запись:</p>
         <select id="role-select">
-            <option value="медсестра_4био">Старшая медсестра (4 БИО)</option>
-            <option value="медсестра_орит">Медсестра ОРИТ</option>
             <option value="медсестра_1био">Медсестра 1 БИО</option>
-            <option value="медсестра_педиатрия">Медсестра Педиатрия</option>
+            <option value="медсестра_2био">Медсестра 2 БИО</option>
+            <option value="медсестра_3био">Медсестра 3 БИО</option>
+            <option value="медсестра_4био">Старшая медсестра (4 БИО)</option>
+            <option value="медсестра_5био">Медсестра 5 БИО</option>
+            <option value="медсестра_дс">Медсестра ДС (дневной стационар)</option>
+            <option value="медсестра_орит">Медсестра ОРИТ</option>
             <option value="начмед">Начмед (только чтение)</option>
             <option value="приемный_покой">Приемное отделение (полный доступ)</option>
         </select>
@@ -190,33 +191,49 @@
 
     <script>
         // ------------------------------------------------------------
-        // 1. КОНФИГУРАЦИЯ ОТДЕЛЕНИЙ
+        // 1. КОНФИГУРАЦИЯ ОТДЕЛЕНИЙ (все отделения стационара)
         // ------------------------------------------------------------
         const departments = {
+            '1 БИО': {
+                wardConfig: { '1':4, '2':4, '3':4, '4':4, '5':4 },
+                wardOrder: ['1','2','3','4','5']
+            },
+            '2 БИО': {
+                wardConfig: { '1':4, '2':4, '3':4, '4':4, '5':4 },
+                wardOrder: ['1','2','3','4','5']
+            },
+            '3 БИО': {
+                wardConfig: { '1':4, '2':4, '3':4, '4':4, '5':4 },
+                wardOrder: ['1','2','3','4','5']
+            },
             '4 БИО': {
                 wardConfig: { '1':2, '2':3, '3':5, '4':5, '5':5, '6':5, '7':5, '8':5, '9':3, '10':2, '11':2, '12':6, 'Коридор':6 },
                 wardOrder: ['1','2','3','4','5','6','7','8','9','10','11','12','Коридор']
             },
+            '5 БИО': {
+                wardConfig: { '1':4, '2':4, '3':4, '4':4, '5':4 },
+                wardOrder: ['1','2','3','4','5']
+            },
+            'ДС': {  // дневной стационар – 20 мест в одной палате
+                wardConfig: { 'Дневной': 20 },
+                wardOrder: ['Дневной']
+            },
             'ОРИТ': {
                 wardConfig: { '1':4, '2':4, '3':4 },
                 wardOrder: ['1','2','3']
-            },
-            '1 БИО': {
-                wardConfig: { '1':4, '2':4 },
-                wardOrder: ['1','2']
-            },
-            'Педиатрия': {
-                wardConfig: { '1':3, '2':3 },
-                wardOrder: ['1','2']
             }
         };
 
+        // Сопоставление ролей и отделений
         const roleDeptMap = {
-            'медсестра_4био': '4 БИО',
-            'медсестра_орит': 'ОРИТ',
             'медсестра_1био': '1 БИО',
-            'медсестра_педиатрия': 'Педиатрия',
-            'начмед': '4 БИО',
+            'медсестра_2био': '2 БИО',
+            'медсестра_3био': '3 БИО',
+            'медсестра_4био': '4 БИО',
+            'медсестра_5био': '5 БИО',
+            'медсестра_дс': 'ДС',
+            'медсестра_орит': 'ОРИТ',
+            'начмед': '4 БИО',   // для чтения покажем 4 БИО
             'приемный_покой': '4 БИО'
         };
 
@@ -232,19 +249,17 @@
         let wardInfectious = {};
 
         // ------------------------------------------------------------
-        // 3. ЖУРНАЛ ДВИЖЕНИЯ (состояние за сегодня)
+        // 3. ЖУРНАЛ ДВИЖЕНИЯ
         // ------------------------------------------------------------
         let journalData = {
-            initialCounts: {},      // отделение -> кол-во на начало дня (при загрузке)
-            admitted: [],           // {dept, fio, diagnosis}
-            discharged: [],         // {dept, fio, diagnosis}
-            transferred: [],        // {deptFrom, deptTo, fio}
-            died: []               // {dept, fio}
+            initialCounts: {},
+            admitted: [],
+            discharged: [],
+            transferred: [],
+            died: []
         };
 
-        // Инициализация журнала при загрузке страницы
         function initJournal() {
-            // Запоминаем начальное количество пациентов в каждом отделении
             const allDepts = Object.keys(departments);
             allDepts.forEach(dept => {
                 journalData.initialCounts[dept] = patients.filter(p => p.dept === dept).length;
@@ -252,9 +267,10 @@
         }
 
         // ------------------------------------------------------------
-        // 4. ИНИЦИАЛИЗАЦИЯ ПАЦИЕНТОВ (активные)
+        // 4. ИНИЦИАЛИЗАЦИЯ ПАЦИЕНТОВ (только для 4 БИО – остальные пусты)
         // ------------------------------------------------------------
         function initPatients() {
+            // Пациенты только в 4 БИО (из предыдущей версии)
             const raw = [
                 { fio: 'Кузьменко В.Д.', gender: 'М', age: 21, ib: '7862', diagnosis: 'БКИ', pregnant: '', diet: 'ОВД' },
                 { fio: 'Леоненко Ю.В.', gender: 'Ж', age: 46, ib: '7951', diagnosis: 'БКИ', pregnant: '', diet: 'ОВД' },
@@ -334,16 +350,14 @@
                 }
             });
 
-            // После инициализации пациентов инициализируем журнал
             initJournal();
         }
         initPatients();
 
         // ------------------------------------------------------------
-        // 5. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+        // 5. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (без изменений)
         // ------------------------------------------------------------
         function getDeptConfig(dept) { return departments[dept] || null; }
-
         function getFreeBeds(dept, ward) {
             const cfg = getDeptConfig(dept);
             if (!cfg) return [];
@@ -355,21 +369,17 @@
             }
             return free;
         }
-
         function getWardOrder(dept) {
             const cfg = getDeptConfig(dept);
             return cfg ? cfg.wardOrder : [];
         }
-
         function getWardConfig(dept) {
             const cfg = getDeptConfig(dept);
             return cfg ? cfg.wardConfig : {};
         }
-
         function isWardInfectious(dept, ward) {
             return wardInfectious[dept + '|' + ward] || false;
         }
-
         function toggleWardInfectious(dept, ward) {
             if (currentRole === 'начмед') {
                 alert('У вас нет прав на изменение заразности');
@@ -379,13 +389,12 @@
             wardInfectious[key] = !wardInfectious[key];
             renderPortion();
         }
-
         function getToday() {
             return new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
         }
 
         // ------------------------------------------------------------
-        // 6. ВХОД/ВЫХОД
+        // 6. ВХОД/ВЫХОД (обновлён селект ролей)
         // ------------------------------------------------------------
         function login() {
             currentRole = document.getElementById('role-select').value;
@@ -399,14 +408,11 @@
             const canEdit = (currentRole.includes('медсестра') || currentRole === 'приемный_покой');
             document.getElementById('add-patient-form').style.display = canEdit ? 'flex' : 'none';
 
-            // Заполняем селекты добавления
             populateWardSelect('new-ward', currentDept);
             document.getElementById('new-ward').onchange = function() { populateBedSelect('new-ward', 'new-bed', currentDept); };
             populateBedSelect('new-ward', 'new-bed', currentDept);
 
-            // Заполняем селекты перевода
             populateTransferDeptSelect();
-
             switchTab('portion');
         }
 
@@ -426,7 +432,7 @@
         }
 
         // ------------------------------------------------------------
-        // 7. СЕЛЕКТЫ ДЛЯ ДОБАВЛЕНИЯ
+        // 7. СЕЛЕКТЫ (без изменений)
         // ------------------------------------------------------------
         function populateWardSelect(selectId, dept) {
             const sel = document.getElementById(selectId);
@@ -460,7 +466,7 @@
         }
 
         // ------------------------------------------------------------
-        // 8. ДОБАВЛЕНИЕ ПАЦИЕНТА (с записью в журнал)
+        // 8. ДОБАВЛЕНИЕ, ВЫПИСКА, ВОЗВРАТ, ПЕРЕВОД – без изменений
         // ------------------------------------------------------------
         function addPatient() {
             const fio = document.getElementById('new-fio').value.trim();
@@ -472,7 +478,7 @@
             const bed = parseInt(document.getElementById('new-bed').value);
 
             if (!fio || !ib || isNaN(age) || age < 0 || isNaN(bed)) {
-                alert('Заполните все поля корректно (ФИО, возраст, № ИБ, выберите койку)');
+                alert('Заполните все поля корректно');
                 return;
             }
 
@@ -482,7 +488,6 @@
                 return;
             }
 
-            // Добавляем пациента
             const newPatient = {
                 id: nextId++,
                 dept: currentDept,
@@ -498,15 +503,8 @@
                 status: 'В палате'
             };
             patients.push(newPatient);
+            journalData.admitted.push({ dept: currentDept, fio: fio, diagnosis: diagnosis });
 
-            // Записываем в журнал как поступление
-            journalData.admitted.push({
-                dept: currentDept,
-                fio: fio,
-                diagnosis: diagnosis
-            });
-
-            // Очистка полей
             document.getElementById('new-fio').value = '';
             document.getElementById('new-age').value = '';
             document.getElementById('new-ib').value = '';
@@ -515,65 +513,41 @@
             renderAll();
         }
 
-        // ------------------------------------------------------------
-        // 9. ВЫПИСКА (перемещение в dischargedPatients и запись в журнал)
-        // ------------------------------------------------------------
         function dischargePatient(patientId) {
             const idx = patients.findIndex(p => p.id === patientId);
             if (idx === -1) return;
             const p = patients[idx];
-            // Добавляем в выписанные с датой
-            dischargedPatients.push({
-                ...p,
-                dischargeDate: getToday()
-            });
-            // Записываем в журнал как выбытие
-            journalData.discharged.push({
-                dept: p.dept,
-                fio: p.fio,
-                diagnosis: p.diagnosis
-            });
-            // Удаляем из активных
+            dischargedPatients.push({ ...p, dischargeDate: getToday() });
+            journalData.discharged.push({ dept: p.dept, fio: p.fio, diagnosis: p.diagnosis });
             patients.splice(idx, 1);
             renderAll();
         }
 
-        // ------------------------------------------------------------
-        // 10. ВОЗВРАТ ИЗ ВЫПИСАННЫХ (без записи в журнал, так как это не новое поступление)
-        // ------------------------------------------------------------
         function returnPatient(dischargedId) {
             const idx = dischargedPatients.findIndex(p => p.id === dischargedId);
             if (idx === -1) return;
             const p = dischargedPatients[idx];
             const freeBeds = getFreeBeds(p.dept, p.ward);
             if (freeBeds.includes(p.bed)) {
-                patients.push({
-                    ...p,
-                    status: 'В палате'
-                });
+                patients.push({ ...p, status: 'В палате' });
                 dischargedPatients.splice(idx, 1);
                 renderAll();
             } else {
                 const corridorBeds = getFreeBeds(p.dept, 'Коридор');
                 if (corridorBeds.length > 0) {
                     const newBed = corridorBeds[0];
-                    patients.push({
-                        ...p,
-                        ward: 'Коридор',
-                        bed: newBed,
-                        status: 'В палате'
-                    });
+                    patients.push({ ...p, ward: 'Коридор', bed: newBed, status: 'В палате' });
                     dischargedPatients.splice(idx, 1);
                     renderAll();
-                    alert('Исходная койка была занята, пациент помещён в Коридор на койку ' + newBed);
+                    alert('Исходная койка занята, пациент помещён в Коридор на койку ' + newBed);
                 } else {
-                    alert('Нет свободных мест в коридоре, возврат невозможен.');
+                    alert('Нет свободных мест для возврата');
                 }
             }
         }
 
         // ------------------------------------------------------------
-        // 11. ПЕРЕВОД (модалка + запись в журнал)
+        // 9. ПЕРЕВОД (модалка)
         // ------------------------------------------------------------
         function populateTransferDeptSelect() {
             const sel = document.getElementById('transfer-dept');
@@ -659,18 +633,11 @@
 
             const occupied = patients.some(x => x.dept === targetDept && x.ward === targetWard && x.bed === targetBed && x.id !== transferPatientId);
             if (occupied) {
-                alert('Эта койка уже занята другим пациентом');
+                alert('Койка уже занята другим пациентом');
                 return;
             }
 
-            // Запись в журнал: переведено ИЗ (старое отделение) и В (новое отделение)
-            journalData.transferred.push({
-                deptFrom: p.dept,
-                deptTo: targetDept,
-                fio: p.fio
-            });
-
-            // Обновляем данные пациента
+            journalData.transferred.push({ deptFrom: p.dept, deptTo: targetDept, fio: p.fio });
             p.dept = targetDept;
             p.ward = targetWard;
             p.bed = targetBed;
@@ -685,7 +652,7 @@
         }
 
         // ------------------------------------------------------------
-        // 12. РЕНДЕР ПОРЦИОННИКА (только активные)
+        // 10. РЕНДЕР ПОРЦИОННИКА (без изменений)
         // ------------------------------------------------------------
         function renderPortion() {
             const tbody = document.getElementById('portion-table-body');
@@ -792,7 +759,7 @@
         }
 
         // ------------------------------------------------------------
-        // 13. РЕНДЕР СВОДКИ ВЫПИСАННЫХ
+        // 11. РЕНДЕР СВОДКИ ВЫПИСАННЫХ (без изменений)
         // ------------------------------------------------------------
         function renderDischarged() {
             const tbody = document.getElementById('discharged-table-body');
@@ -832,22 +799,14 @@
         }
 
         // ------------------------------------------------------------
-        // 14. РЕНДЕР ЖУРНАЛА ДВИЖЕНИЯ
+        // 12. РЕНДЕР ЖУРНАЛА (все отделения)
         // ------------------------------------------------------------
         function renderJournal() {
             const tbody = document.getElementById('journal-table-body');
             tbody.innerHTML = '';
 
             const allDepts = Object.keys(departments);
-            let totals = {
-                initial: 0,
-                admitted: 0,
-                discharged: 0,
-                died: 0,
-                transferredFrom: 0,
-                transferredTo: 0,
-                today: 0
-            };
+            let totals = { initial: 0, admitted: 0, discharged: 0, died: 0, transferredFrom: 0, transferredTo: 0, today: 0 };
 
             allDepts.forEach(dept => {
                 const initial = journalData.initialCounts[dept] || 0;
@@ -862,10 +821,8 @@
                 const diedCount = diedList.length;
                 const transferredFromCount = transferredFromList.length;
                 const transferredToCount = transferredToList.length;
-
                 const todayCount = patients.filter(p => p.dept === dept).length;
 
-                // Строка
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><strong>${dept}</strong></td>
@@ -879,7 +836,6 @@
                 `;
                 tbody.appendChild(tr);
 
-                // Суммируем итоги
                 totals.initial += initial;
                 totals.admitted += admittedCount;
                 totals.discharged += dischargedCount;
@@ -889,7 +845,6 @@
                 totals.today += todayCount;
             });
 
-            // Строка ВСЕГО
             const totalRow = document.createElement('tr');
             totalRow.className = 'journal-total';
             totalRow.innerHTML = `
@@ -906,10 +861,9 @@
         }
 
         // ------------------------------------------------------------
-        // 15. РЕНДЕР ВСЕХ ВКЛАДОК (при изменениях)
+        // 13. РЕНДЕР ВСЕХ (при изменениях)
         // ------------------------------------------------------------
         function renderAll() {
-            // Обновляем только активную вкладку, чтобы не перерисовывать всё
             const activeTab = document.querySelector('.tab-content.active');
             if (activeTab) {
                 const id = activeTab.id;
@@ -920,11 +874,9 @@
         }
 
         // ------------------------------------------------------------
-        // 16. ЗАПУСК
+        // 14. ЗАПУСК
         // ------------------------------------------------------------
-        document.addEventListener('DOMContentLoaded', function() {
-            // Ничего не делаем – ждём входа
-        });
+        document.addEventListener('DOMContentLoaded', function() {});
     </script>
 </body>
 </html>
