@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Порционник 4 БИО (исправлен)</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; margin: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: #1e3a8a; color: white; padding: 10px 20px; border-radius: 5px; margin-bottom: 20px; }
+        .header .dept-label { background: #f59e0b; padding: 4px 12px; border-radius: 4px; font-weight: bold; }
+        .toolbar { margin-bottom: 15px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .toolbar input { padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 250px; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; color: white; }
+        .btn-success { background: #22c55e; }
+        .btn-danger { background: #ef4444; }
+        .btn-warning { background: #f59e0b; color: #000; }
+        .btn-primary { background: #2563eb; }
+        .btn-info { background: #0891b2; }
+        .btn-secondary { background: #6c757d; color: white; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: left; font-size: 13px; vertical-align: middle; }
+        th { background-color: #f1f5f9; color: #1e3a8a; }
+        .free-row { background-color: #f9f9f9; cursor: pointer; }
+        .free-row.highlight { background-color: #e8f5e9; }
+        .occupied-row { cursor: pointer; }
+        .occupied-row.highlight { background-color: #f0f4ff; }
+        .released-row { background-color: #fffbeb; cursor: pointer; }
+        .released-row.highlight { background-color: #fff3cd; }
+        .out-of-region-row { background-color: #e0f2fe; }
+        .out-of-region-row.highlight { background-color: #b9e6ff; }
+        .ward-cell { font-weight: bold; text-align: center; vertical-align: middle; font-size: 15px; cursor: pointer; background-color: white; }
+        .ward-cell.highlight { background-color: #dbeafe; }
+        .ward-infectious { background-color: #ffdddd !important; }
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; color: white; display: inline-block; margin-right: 4px; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background: #fefefe; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 600px; border-radius: 8px; max-height: 80%; overflow-y: auto; position: relative; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .modal label { display: inline-block; width: 140px; margin-top: 5px; }
+        .modal input, .modal select { padding: 5px; margin: 3px 0; width: 200px; }
+        .modal .form-row { display: flex; align-items: center; margin: 3px 0; }
+        .modal .form-row > label { width: 140px; flex-shrink: 0; }
+        .modal .form-row > input, .modal .form-row > select { flex: 1; width: auto; }
+        .modal .diag-mkb { display: flex; gap: 5px; }
+        .modal .diag-mkb input.diag { flex: 1; }
+        .modal .diag-mkb input.mkb { width: 80px; }
+        .modal .checkbox-inline { display: flex; align-items: center; gap: 15px; margin: 8px 0; }
+        .modal .checkbox-inline label { width: auto; margin: 0; }
+        .transfer-panel, .return-panel { display: none; margin-top: 10px; }
+        .autocomplete-list { position: absolute; background: white; border: 1px solid #ccc; max-height: 150px; overflow-y: auto; width: 250px; z-index: 10; }
+        .autocomplete-item { padding: 4px 8px; cursor: pointer; }
+        .autocomplete-item:hover { background: #e0e0e0; }
+        .ward-controls { display: inline-flex; gap: 5px; margin-left: 10px; }
+        .ward-controls button { padding: 0 8px; font-size: 14px; line-height: 1; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 3px; cursor: pointer; }
+        .log-entry { border-bottom: 1px solid #eee; padding: 5px 0; }
+        .log-entry button { margin-left: 10px; }
+        .btn-deceased-bottom { position: absolute; bottom: 20px; right: 20px; }
+
+        @media print {
+            body { background: white; margin: 0; }
+            .header, .toolbar, .modal, .autocomplete-list, .btn-deceased-bottom, .ward-controls button, .btn { display: none !important; }
+            .print-header { display: block !important; text-align: center; margin-bottom: 10px; }
+            .print-header h2 { margin: 0; font-size: 14px; }
+            .print-header p { margin: 5px 0; font-size: 12px; }
+            table { font-size: 9px; width: 100%; }
+            th, td { padding: 2px 3px; word-break: break-word; }
+            th { font-size: 9px; white-space: normal; }
+            .ward-cell { font-size: 10px; background-color: white; }
+            @page { size: A4 portrait; margin: 8mm; }
+        }
+        .print-header { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <strong>Порционник инфекционного отделения №4</strong> | 
+            <span id="display-date"></span>
+            <span class="dept-label">Отделение: 4 БИО</span>
+        </div>
+        <button class="btn btn-danger" onclick="resetData()">Сбросить все данные</button>
+    </div>
+
+    <div class="toolbar">
+        <label>🔍 Поиск по фамилии:</label>
+        <input type="text" id="search-input" oninput="renderAll()" placeholder="Введите фамилию...">
+        <button class="btn btn-success" onclick="openAddModal(null, null)">➕ Добавить пациента</button>
+        <button class="btn btn-warning" onclick="openUndoModal()">↩️ Отмена действий</button>
+        <button class="btn btn-secondary" onclick="window.print()">🖨️ Печать</button>
+    </div>
+
+    <div class="print-header">
+        <h2>Порционник 4 БИО</h2>
+        <p id="print-date"></p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Палата</th><th>Койка</th><th>ФИО</th><th>Возраст</th><th>Пол</th><th>№ ИБ</th><th>Стол</th><th>Вид оплаты</th><th>Дата госп.</th><th>Диагноз</th><th>МКБ</th><th>Отметки</th>
+            </tr>
+        </thead>
+        <tbody id="portion-table-body"></tbody>
+    </table>
+
+    <!-- Модальное окно редактирования -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeEditModal()">&times;</span>
+            <h3 id="modal-title">Редактировать</h3>
+            <input type="hidden" id="edit-id">
+            <div class="form-row"><label>Палата:</label><input type="text" id="edit-ward" readonly></div>
+            <div class="form-row"><label>Койка:</label><input type="text" id="edit-bed" readonly></div>
+            <div class="form-row"><label>ФИО:</label><input type="text" id="edit-fio"></div>
+            <div class="form-row"><label>Возраст:</label><input type="number" id="edit-age" min="0"></div>
+            <div class="form-row"><label>Пол:</label><select id="edit-gender" onchange="genderChanged()"><option>М</option><option>Ж</option></select></div>
+            <div class="form-row"><label>№ ИБ:</label><input type="text" id="edit-ib"></div>
+            <div class="form-row"><label>Стол:</label><select id="edit-diet"><option>ОВД</option><option>ВБД</option><option>ЩД</option><option>ЩД б/м</option></select></div>
+            <div class="form-row"><label>Вид оплаты:</label><select id="edit-payment"><option>ОМС</option><option>Платно</option><option>Бюджет</option></select></div>
+            <div class="form-row">
+                <label>Дата госп.:</label>
+                <input type="date" id="edit-admission-date">
+                <input type="time" id="edit-admission-time" style="width:100px; margin-left:5px;">
+            </div>
+            <div class="form-row">
+                <label>Диагноз:</label>
+                <div class="diag-mkb">
+                    <input type="text" id="edit-diagnosis" class="diag" autocomplete="off" oninput="onDiagnosisInput()" onfocus="onDiagnosisFocus()" placeholder="Начните вводить">
+                    <input type="text" id="edit-mkb" class="mkb" placeholder="МКБ">
+                </div>
+            </div>
+            <div id="autocomplete-list" class="autocomplete-list" style="display:none;"></div>
+            <div class="form-row" id="pregnant-row"><label>Беременность:</label><input type="text" id="edit-pregnant" placeholder="недель" onblur="formatPregnant(this)"></div>
+            <div class="checkbox-inline" id="postpartum-row">
+                <input type="checkbox" id="edit-postpartum">
+                <label for="edit-postpartum">Послеродовая</label>
+            </div>
+            <div class="form-row"><label>Тяжесть:</label><select id="edit-severity"><option value="средняя">Средняя</option><option value="тяжелая">Тяжелая</option></select></div>
+            <div class="form-row">
+                <label>О2:</label>
+                <input type="number" id="edit-oxygen-liters" placeholder="л/мин" min="0" step="0.5" style="width:80px;">
+            </div>
+            <div class="checkbox-inline" style="margin-top:8px;">
+                <div style="display:flex; gap:15px;">
+                    <div><input type="checkbox" id="edit-covid"> <label for="edit-covid">COVID-19</label></div>
+                    <div><input type="checkbox" id="edit-hiv"> <label for="edit-hiv">Ф-50</label></div>
+                    <div><input type="checkbox" id="edit-out-of-region"> <label for="edit-out-of-region">Инокрай</label></div>
+                </div>
+            </div>
+            <div style="margin:10px 0;" id="action-buttons">
+                <button class="btn btn-primary" id="btn-transfer" onclick="showTransfer()">🔄 Перевести</button>
+                <button class="btn btn-danger" id="btn-release" style="display:none;" onclick="actionFromModal('release')">Отпустить</button>
+                <button class="btn btn-warning" id="btn-return" style="display:none;" onclick="showReturnPanel()">Вернуть</button>
+                <button class="btn btn-danger" id="btn-discharge" onclick="actionFromModal('discharge')">Выписать</button>
+            </div>
+            <div class="transfer-panel" id="transfer-panel">
+                <label>Отделение:</label>
+                <select id="transfer-dept" onchange="transferDeptChanged()">
+                    <option value="4 БИО">4 БИО (текущее)</option>
+                    <option value="1 БИО">1 БИО</option>
+                    <option value="2 БИО">2 БИО</option>
+                    <option value="3 БИО">3 БИО</option>
+                    <option value="5 БИО">5 БИО</option>
+                    <option value="ОРИТ">ОРИТ</option>
+                </select>
+                <div id="transfer-ward-row">
+                    <label>Новая палата:</label><select id="transfer-ward"></select><br>
+                    <label>Новая койка:</label><select id="transfer-bed"></select><br>
+                </div>
+                <div id="transfer-time-row" style="display:none;">
+                    <label>Время перевода:</label><input type="time" id="transfer-time" value="">
+                </div>
+                <button class="btn btn-primary" onclick="confirmTransfer()">Выполнить перевод</button>
+            </div>
+            <div class="return-panel" id="return-panel">
+                <label>Вернуть в палату:</label><select id="return-ward"></select><br>
+                <label>На койку:</label><select id="return-bed"></select><br>
+                <button class="btn btn-primary" onclick="confirmReturn()">Вернуть</button>
+            </div>
+            <button class="btn btn-success" onclick="savePatient()">Сохранить изменения</button>
+            <button class="btn btn-danger btn-deceased-bottom" id="btn-deceased" onclick="actionFromModal('deceased')">Умер</button>
+            <button class="btn btn-danger" onclick="closeEditModal()">Отмена</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно отмены действий -->
+    <div id="undoModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="document.getElementById('undoModal').style.display='none'">&times;</span>
+            <h3>↩️ Журнал действий (отмена операций)</h3>
+            <div id="event-log-list"></div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- ЕДИНАЯ БИБЛИОТЕКА ДИАГНОЗОВ ----------
+        const DIAGNOSES = [
+            { "сводка": "ОКИ н/у", "порционник": "ОКИ н/у", "МКБ": "A04.9" },
+            { "сводка": "Сальмонеллез", "порционник": "Сальмонеллез", "МКБ": "A02.0" },
+            { "сводка": "Ботулизм", "порционник": "Ботулизм", "МКБ": "A05.1" },
+            { "сводка": "Грипп", "порционник": "Грипп", "МКБ": "J11.9" },
+            { "сводка": "Фелиноз", "порционник": "Фелиноз", "МКБ": "A28.1" },
+            { "сводка": "ОВГ н/у", "порционник": "ОВГ н/у", "МКБ": "B17.9" },
+            { "сводка": "ОВГ \"В\"", "порционник": "ОВГ \"В\"", "МКБ": "B16.9" },
+            { "сводка": "ОВГ «А»", "порционник": "ОВГ «А»", "МКБ": "B15.9" },
+            { "сводка": "ОВГ «С»", "порционник": "ОВГ «С»", "МКБ": "B17.1" },
+            { "сводка": "ОВГ «Е»", "порционник": "ОВГ «Е»", "МКБ": "B17.2" },
+            { "сводка": "ХВГ «В»", "порционник": "ХВГ «В»", "МКБ": "B18.1" },
+            { "сводка": "ХВГ «С»", "порционник": "ХВГ «С»", "МКБ": "B18.2" },
+            { "сводка": "ХВГ «В+Д»", "порционник": "ХВГ «В+Д»", "МКБ": "B18.0" },
+            { "сводка": "Боррелиоз", "порционник": "Боррелиоз", "МКБ": "A69.2" },
+            { "сводка": "Иммунизация против вирусного энцефалита", "порционник": "Иммунизация", "МКБ": "Z24.1" },
+            { "сводка": "Менингит н/у", "порционник": "Менингит н/у", "МКБ": "G03.9" },
+            { "сводка": "Опоясывающий лишай", "порционник": "О. лишай", "МКБ": "B02.9" },
+            { "сводка": "Герпес HSV 1,2 типа", "порционник": "Герпес HSV 1,2 типа", "МКБ": "B00.9" },
+            { "сводка": "Вирусная инфекция н/у", "порционник": "Вирусная инфекция", "МКБ": "B34.9" },
+            { "сводка": "Бактериальная инфекция н/у", "порционник": "Бактериальная инфекция", "МКБ": "A49.9" },
+            { "сводка": "ВИЧ", "порционник": "Ф-50", "МКБ": "B20" },
+            { "сводка": "COVID-19", "порционник": "COVID-19", "МКБ": "U07.1" },
+            { "сводка": "ОРИ", "порционник": "ОРИ", "МКБ": "J06.9" },
+            { "сводка": "Пневмония", "порционник": "Пневмония", "МКБ": "J18.9" },
+            { "сводка": "О. тонзиллит", "порционник": "О. тонзиллит", "МКБ": "J03.9" },
+            { "сводка": "Энтеровирусная инфекция", "порционник": "Энтеровирус", "МКБ": "B34.1" },
+            { "сводка": "Инфекционный мононуклеоз", "порционник": "Мононуклеоз", "МКБ": "B27.9" },
+            { "сводка": "Парвовирусная инфекция", "порционник": "Парвовирус", "МКБ": "B34.3" },
+            { "сводка": "В. Оспа", "порционник": "В. Оспа", "МКБ": "B01.9" },
+            { "сводка": "Эпид. паротит", "порционник": "Эпид. паротит", "МКБ": "B26.9" },
+            { "сводка": "Парагрипп", "порционник": "Парагрипп", "МКБ": "J06.0" },
+            { "сводка": "ГЛПС", "порционник": "ГЛПС", "МКБ": "A98.5" },
+            { "сводка": "Лептоспироз", "порционник": "Лептоспироз", "МКБ": "A27.9" },
+            { "сводка": "Болезнь легионеров", "порционник": "Легионеллез", "МКБ": "A48.1" },
+            { "сводка": "Малярия", "порционник": "Малярия", "МКБ": "B54" },
+            { "сводка": "Рожа", "порционник": "Рожа", "МКБ": "A46" },
+            { "сводка": "Описторхоз", "порционник": "Описторхоз", "МКБ": "B66.0" },
+            { "сводка": "Тениоз", "порционник": "Тениоз", "МКБ": "B69.9" },
+            { "сводка": "Тениаринхоз", "порционник": "Тениаринхоз", "МКБ": "B68.0" },
+            { "сводка": "Лихорадка н.у.", "порционник": "Лихорадка н.у.", "МКБ": "R50.9" },
+            { "сводка": "Сепсис", "порционник": "Сепсис", "МКБ": "A41.9" },
+            { "сводка": "Лихорадка Денге", "порционник": "Лихорадка Денге", "МКБ": "A90" },
+            { "сводка": "Наблюдение", "порционник": "Наблюдение", "МКБ": "Z03.8" }
+        ];
+        const COMMON_DIAGS = ['ОКИ н/у', 'ОРИ', 'Пневмония', 'О. тонзиллит', 'О. лишай'];
+
+        // ---------- КОНФИГУРАЦИЯ ПАЛАТ ----------
+        let WARD_CONFIG = {
+            '1':2, '2':3, '3':5, '4':5, '5':5, '6':5,
+            '7':5, '8':5, '9':3, '10':2, '11':2, '12':6,
+            'Коридор':3, 'Резерв':10000
+        };
+        const WARD_ORDER = ['1','2','3','4','5','6','7','8','9','10','11','12','Коридор'];
+
+        let patients = [];
+        let discharged = [];
+        let eventLog = [];
+        let nextId = 100;
+        let wardInfectious = {};
+
+        // ---------- LOCAL STORAGE ----------
+        function safeStorage(method, key, value) {
+            try {
+                if (method === 'get') return JSON.parse(localStorage.getItem(key));
+                if (method === 'set') localStorage.setItem(key, JSON.stringify(value));
+                if (method === 'remove') localStorage.removeItem(key);
+            } catch(e) { console.warn('localStorage:', e); }
+            return null;
+        }
+        const STORAGE_KEY = 'portion_final_v7';
+        function save() { safeStorage('set', STORAGE_KEY, { patients, discharged, eventLog, nextId, wardInfectious, WARD_CONFIG }); }
+        function load() {
+            const data = safeStorage('get', STORAGE_KEY);
+            if (data) {
+                patients = data.patients || []; discharged = data.discharged || [];
+                eventLog = data.eventLog || []; nextId = data.nextId || 100;
+                wardInfectious = data.wardInfectious || {};
+                if (data.WARD_CONFIG) WARD_CONFIG = data.WARD_CONFIG;
+                return;
+            }
+            // Демо-пациенты
+            patients = [
+                { id: nextId++, ward: '1', bed: 1, fio: 'Алексеев А.А.', age: 35, gender: 'М', ib: '2001', diet: 'ОВД', payment: 'ОМС', admissionDate: '2026-07-20', admissionTime: '10:30', diagnosis: 'ОКИ н/у', mkb: 'A04.9', pregnant: '', severity: 'средняя', postpartum: false, covid: false, hiv: false, outOfRegion: false, oxygenLiters: 0, status: 'В палате' },
+                { id: nextId++, ward: '1', bed: 2, fio: 'Фёдорова Ф.Ф.', age: 42, gender: 'Ж', ib: '2010', diet: 'ЩД', payment: 'ОМС', admissionDate: '2026-07-21', admissionTime: '08:00', diagnosis: 'О. лишай', mkb: 'B02.9', pregnant: '', severity: 'средняя', postpartum: false, covid: false, hiv: false, outOfRegion: true, oxygenLiters: 0, status: 'В палате' },
+                { id: nextId++, ward: '2', bed: 1, fio: 'Борисова Б.Б.', age: 28, gender: 'Ж', ib: '2002', diet: 'ЩД', payment: 'ОМС', admissionDate: '2026-07-21', admissionTime: '01:15', diagnosis: 'Пневмония', mkb: 'J18.9', pregnant: '8 нед.', severity: 'тяжелая', postpartum: false, covid: true, hiv: false, outOfRegion: true, oxygenLiters: 6, status: 'В палате' },
+                { id: nextId++, ward: '3', bed: 2, fio: 'Васильев В.В.', age: 45, gender: 'М', ib: '2003', diet: 'ВБД', payment: 'Платно', admissionDate: '2026-07-20', admissionTime: '23:00', diagnosis: 'О. тонзиллит', mkb: 'J03.9', pregnant: '', severity: 'средняя', postpartum: false, covid: false, hiv: true, outOfRegion: false, oxygenLiters: 0, status: 'В палате' },
+                { id: nextId++, ward: '4', bed: 1, fio: 'Григорьева Г.Г.', age: 60, gender: 'Ж', ib: '2004', diet: 'ОВД', payment: 'Бюджет', admissionDate: '2026-07-19', admissionTime: '14:20', diagnosis: 'Сепсис', mkb: 'A41.9', pregnant: '', severity: 'тяжелая', postpartum: false, covid: false, hiv: false, outOfRegion: true, oxygenLiters: 10, status: 'В палате' },
+                { id: nextId++, ward: '5', bed: 1, fio: 'Дмитриев Д.Д.', age: 32, gender: 'М', ib: '2005', diet: 'ЩД б/м', payment: 'ОМС', admissionDate: '2026-07-18', admissionTime: '09:10', diagnosis: 'Боррелиоз', mkb: 'A69.2', pregnant: '', severity: 'средняя', postpartum: false, covid: false, hiv: false, outOfRegion: false, oxygenLiters: 0, status: 'В палате' },
+                { id: nextId++, ward: 'Резерв', bed: 1, fio: 'Ефремова Е.Е.', age: 27, gender: 'Ж', ib: '2006', diet: 'ОВД', payment: 'ОМС', admissionDate: '2026-07-18', admissionTime: '16:00', diagnosis: 'ОКИ н/у', mkb: 'A04.9', pregnant: '20 нед.', severity: 'средняя', postpartum: false, covid: false, hiv: false, outOfRegion: true, oxygenLiters: 0, status: 'Отпущен' },
+                { id: nextId++, ward: 'Резерв', bed: 2, fio: 'Жуков Ж.Ж.', age: 55, gender: 'М', ib: '2007', diet: 'ВБД', payment: 'Платно', admissionDate: '2026-07-17', admissionTime: '11:00', diagnosis: 'ХВГ «С»', mkb: 'B18.2', pregnant: '', severity: 'средняя', postpartum: false, covid: false, hiv: false, outOfRegion: false, oxygenLiters: 0, status: 'Отпущен' }
+            ];
+        }
+        function resetData() { if (confirm('Удалить все данные?')) { safeStorage('remove', STORAGE_KEY); location.reload(); } }
+
+        function getFreeBeds(ward) {
+            const total = WARD_CONFIG[ward] || 0;
+            const occupied = patients.filter(p => p.ward === ward && p.status !== 'Отпущен').map(p => p.bed);
+            const free = [];
+            for (let i=1; i<=total; i++) if (!occupied.includes(i)) free.push(i);
+            return free;
+        }
+        function getNextReserveBed() {
+            const reservePatients = patients.filter(p => p.ward === 'Резерв');
+            return reservePatients.length === 0 ? 1 : Math.max(...reservePatients.map(p => p.bed)) + 1;
+        }
+        function getTimestamp() { return new Date().toLocaleString('ru-RU'); }
+
+        function formatPregnant(input) { const val = input.value.trim(); if (/^\d+$/.test(val)) input.value = val + ' нед.'; }
+
+        function genderChanged() {
+            const gender = document.getElementById('edit-gender').value;
+            document.getElementById('pregnant-row').style.display = (gender === 'М') ? 'none' : 'flex';
+            document.getElementById('postpartum-row').style.display = (gender === 'М') ? 'none' : 'flex';
+            if (gender === 'М') { document.getElementById('edit-pregnant').value = ''; document.getElementById('edit-postpartum').checked = false; }
+        }
+
+        // Автоподстановка диагноза
+        function filterDiagnoses(query) {
+            if (!query) {
+                const common = COMMON_DIAGS.map(d => DIAGNOSES.find(x => x.порционник === d)).filter(Boolean);
+                const others = DIAGNOSES.filter(d => !COMMON_DIAGS.includes(d.порционник));
+                return [...common, ...others].slice(0, 8);
+            }
+            const lower = query.toLowerCase();
+            return DIAGNOSES.filter(d => d.порционник.toLowerCase().includes(lower)).slice(0, 8);
+        }
+        function showAutocomplete(items) {
+            const list = document.getElementById('autocomplete-list');
+            list.innerHTML = '';
+            if (!items || items.length === 0) { list.style.display = 'none'; return; }
+            items.forEach(item => {
+                const div = document.createElement('div'); div.className = 'autocomplete-item';
+                div.textContent = item.порционник + ' [' + item.МКБ + ']';
+                div.onclick = () => { document.getElementById('edit-diagnosis').value = item.порционник; document.getElementById('edit-mkb').value = item.МКБ; list.style.display = 'none'; };
+                list.appendChild(div);
+            });
+            list.style.display = 'block';
+        }
+        function onDiagnosisInput() { showAutocomplete(filterDiagnoses(document.getElementById('edit-diagnosis').value)); }
+        function onDiagnosisFocus() { if (!document.getElementById('edit-diagnosis').value) showAutocomplete(filterDiagnoses('')); }
+        document.addEventListener('click', function(e) { if (!e.target.closest('#edit-diagnosis') && !e.target.closest('#autocomplete-list')) document.getElementById('autocomplete-list').style.display = 'none'; });
+
+        // Модальные окна
+        function openAddModal(ward, bed) {
+            document.getElementById('modal-title').textContent = '➕ Новый пациент';
+            document.getElementById('edit-id').value = '';
+            document.getElementById('edit-ward').value = ward || '';
+            document.getElementById('edit-bed').value = bed || '';
+            document.getElementById('edit-fio').value = '';
+            document.getElementById('edit-age').value = '';
+            document.getElementById('edit-gender').value = 'М';
+            document.getElementById('edit-ib').value = '';
+            document.getElementById('edit-diet').value = 'ОВД';
+            document.getElementById('edit-diagnosis').value = '';
+            document.getElementById('edit-mkb').value = '';
+            document.getElementById('edit-pregnant').value = '';
+            document.getElementById('edit-severity').value = 'средняя';
+            document.getElementById('edit-payment').value = 'ОМС';
+            const now = new Date();
+            document.getElementById('edit-admission-date').value = now.toISOString().split('T')[0];
+            document.getElementById('edit-admission-time').value = now.toTimeString().slice(0,5);
+            document.getElementById('edit-postpartum').checked = false;
+            document.getElementById('edit-covid').checked = false;
+            document.getElementById('edit-hiv').checked = false;
+            document.getElementById('edit-out-of-region').checked = false;
+            document.getElementById('edit-oxygen-liters').value = '';
+            document.querySelectorAll('#action-buttons button').forEach(b => b.style.display = 'none');
+            document.getElementById('btn-deceased').style.display = 'none';
+            document.getElementById('transfer-panel').style.display = 'none';
+            document.getElementById('return-panel').style.display = 'none';
+            document.getElementById('autocomplete-list').style.display = 'none';
+            genderChanged();
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        function openEditModal(id) {
+            const p = patients.find(x => x.id === id);
+            if (!p) return;
+            document.getElementById('modal-title').textContent = '✏️ Редактирование';
+            document.getElementById('edit-id').value = p.id;
+            document.getElementById('edit-ward').value = p.ward;
+            document.getElementById('edit-bed').value = p.bed;
+            document.getElementById('edit-fio').value = p.fio;
+            document.getElementById('edit-gender').value = p.gender;
+            document.getElementById('edit-age').value = p.age;
+            document.getElementById('edit-ib').value = p.ib;
+            document.getElementById('edit-diet').value = p.diet || 'ОВД';
+            document.getElementById('edit-diagnosis').value = p.diagnosis;
+            document.getElementById('edit-mkb').value = p.mkb || '';
+            document.getElementById('edit-pregnant').value = p.pregnant || '';
+            document.getElementById('edit-severity').value = p.severity || 'средняя';
+            document.getElementById('edit-payment').value = p.payment || 'ОМС';
+            document.getElementById('edit-admission-date').value = p.admissionDate || '';
+            document.getElementById('edit-admission-time').value = p.admissionTime || '';
+            document.getElementById('edit-postpartum').checked = p.postpartum || false;
+            document.getElementById('edit-covid').checked = p.covid || false;
+            document.getElementById('edit-hiv').checked = p.hiv || false;
+            document.getElementById('edit-out-of-region').checked = p.outOfRegion || false;
+            document.getElementById('edit-oxygen-liters').value = p.oxygenLiters || '';
+            const isHome = p.status === 'Отпущен';
+            document.getElementById('btn-release').style.display = isHome ? 'none' : 'inline-block';
+            document.getElementById('btn-return').style.display = isHome ? 'inline-block' : 'none';
+            document.getElementById('btn-transfer').style.display = isHome ? 'none' : 'inline-block';
+            document.getElementById('btn-discharge').style.display = 'inline-block';
+            document.getElementById('btn-deceased').style.display = 'inline-block';
+            document.getElementById('transfer-panel').style.display = 'none';
+            document.getElementById('return-panel').style.display = 'none';
+            document.getElementById('autocomplete-list').style.display = 'none';
+            genderChanged();
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            document.getElementById('autocomplete-list').style.display = 'none';
+        }
+
+        // Панель возврата из резерва
+        function showReturnPanel() {
+            document.getElementById('return-panel').style.display = 'block';
+            const wardSel = document.getElementById('return-ward');
+            wardSel.innerHTML = '';
+            WARD_ORDER.forEach(w => { if (w !== 'Резерв') { const o = document.createElement('option'); o.value = w; o.textContent = w; wardSel.appendChild(o); } });
+            updateReturnBeds();
+            wardSel.onchange = updateReturnBeds;
+        }
+
+        function updateReturnBeds() {
+            const ward = document.getElementById('return-ward').value;
+            const bedSel = document.getElementById('return-bed');
+            bedSel.innerHTML = '';
+            const free = getFreeBeds(ward);
+            free.forEach(b => { const o = document.createElement('option'); o.value = b; o.textContent = b; bedSel.appendChild(o); });
+            if (free.length === 0) { const o = document.createElement('option'); o.textContent = 'Нет мест'; bedSel.appendChild(o); }
+        }
+
+        function confirmReturn() {
+            const id = document.getElementById('edit-id').value;
+            const p = patients.find(x => x.id == id);
+            if (!p) return;
+            const targetWard = document.getElementById('return-ward').value;
+            const targetBed = parseInt(document.getElementById('return-bed').value);
+            if (isNaN(targetBed)) { alert('Выберите койку'); return; }
+            const occupied = patients.some(x => x.ward === targetWard && x.bed === targetBed && x.id != id && x.status !== 'Отпущен');
+            if (occupied) { alert('Койка занята'); return; }
+            if (!confirm(`Вернуть пациента ${p.fio} в палату ${targetWard} на койку ${targetBed}?`)) return;
+            p.ward = targetWard;
+            p.bed = targetBed;
+            p.status = 'В палате';
+            eventLog.push({ type: 'return_from_release', patientId: p.id, fio: p.fio, date: new Date().toLocaleDateString('ru-RU'), time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) });
+            save();
+            closeEditModal();
+            renderAll();
+        }
+
+        // Перевод
+        function showTransfer() {
+            document.getElementById('transfer-panel').style.display = 'block';
+            document.getElementById('transfer-dept').value = '4 БИО';
+            transferDeptChanged();
+        }
+        function transferDeptChanged() {
+            const dept = document.getElementById('transfer-dept').value;
+            const wardRow = document.getElementById('transfer-ward-row');
+            const timeRow = document.getElementById('transfer-time-row');
+            if (dept === '4 БИО') {
+                wardRow.style.display = 'block';
+                timeRow.style.display = 'none';
+                const wardSel = document.getElementById('transfer-ward'); wardSel.innerHTML = '';
+                WARD_ORDER.forEach(w => { if (w!=='Резерв') { const o = document.createElement('option'); o.value=w; o.textContent=w; wardSel.appendChild(o); } });
+                updateTransferBeds();
+                wardSel.onchange = updateTransferBeds;
+            } else {
+                wardRow.style.display = 'none';
+                timeRow.style.display = 'block';
+                document.getElementById('transfer-time').value = new Date().toTimeString().slice(0,5);
+            }
+        }
+        function updateTransferBeds() {
+            const ward = document.getElementById('transfer-ward').value;
+            const bedSel = document.getElementById('transfer-bed'); bedSel.innerHTML = '';
+            const free = getFreeBeds(ward);
+            free.forEach(b => { const o = document.createElement('option'); o.value=b; o.textContent=b; bedSel.appendChild(o); });
+            if (free.length===0) { const o = document.createElement('option'); o.textContent='Нет мест'; bedSel.appendChild(o); }
+        }
+        function confirmTransfer() {
+            const id = document.getElementById('edit-id').value;
+            const p = patients.find(x => x.id == id);
+            if (!p) return;
+            const dept = document.getElementById('transfer-dept').value;
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('ru-RU');
+            if (dept === '4 БИО') {
+                const targetWard = document.getElementById('transfer-ward').value;
+                const targetBed = parseInt(document.getElementById('transfer-bed').value);
+                if (isNaN(targetBed)) { alert('Выберите койку'); return; }
+                if (p.ward === targetWard && p.bed === targetBed) { alert('Пациент уже здесь'); return; }
+                const occupied = patients.some(x => x.ward === targetWard && x.bed === targetBed && x.id != id && x.status !== 'Отпущен');
+                if (occupied) { alert('Койка занята'); return; }
+                eventLog.push({ type:'transfer_internal', patientId:p.id, fio:p.fio, fromWard:p.ward, toWard:targetWard, date: dateStr, time: now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) });
+                p.ward = targetWard; p.bed = targetBed;
+            } else {
+                const transferTime = document.getElementById('transfer-time').value;
+                if (!transferTime) { alert('Введите время перевода'); return; }
+                if (!confirm(`Перевести пациента ${p.fio} в отделение "${dept}" в ${transferTime}?`)) return;
+                eventLog.push({ type:'transfer_out', patientId:p.id, fio:p.fio, fromDept:'4 БИО', toDept:dept, date: dateStr, time: transferTime });
+                patients = patients.filter(x => x.id != id);
+            }
+            save(); closeEditModal(); renderAll();
+        }
+
+        // Действия
+        function actionFromModal(action) {
+            const id = document.getElementById('edit-id').value;
+            if (!id) return;
+            const p = patients.find(x => x.id == id);
+            if (!p) return;
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('ru-RU');
+
+            if (action === 'release') {
+                if (!confirm('Отпустить пациента (перевести в резерв)?')) return;
+                p.ward = 'Резерв';
+                p.bed = getNextReserveBed();
+                p.status = 'Отпущен';
+                eventLog.push({ type:'release', patientId:p.id, fio:p.fio, date: dateStr, time: now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) });
+                save(); closeEditModal(); renderAll();
+            } else if (action === 'discharge') {
+                let dischargeTime = prompt('Введите время выписки (ЧЧ:ММ)', '15:00');
+                if (dischargeTime === null) return;
+                if (!/^\d{2}:\d{2}$/.test(dischargeTime)) { alert('Неверный формат времени'); return; }
+                if (!confirm(`Выписать пациента в ${dischargeTime}?`)) return;
+                discharged.push({...p, dischargeDate: dateStr, dischargeTime: dischargeTime});
+                patients = patients.filter(x=>x.id!=id);
+                eventLog.push({ type:'discharge', patientId:p.id, fio:p.fio, diagnosis:p.diagnosis, date: dateStr, time: dischargeTime });
+                save(); closeEditModal(); renderAll();
+            } else if (action === 'deceased') {
+                let deathTime = prompt('Введите время смерти (ЧЧ:ММ)', now.toTimeString().slice(0,5));
+                if (deathTime === null) return;
+                if (!/^\d{2}:\d{2}$/.test(deathTime)) { alert('Неверный формат времени'); return; }
+                if (!confirm(`Отметить умершим в ${deathTime}?`)) return;
+                eventLog.push({ type:'deceased', patientId:p.id, fio:p.fio, date: dateStr, time: deathTime });
+                patients = patients.filter(x=>x.id!=id);
+                save(); closeEditModal(); renderAll();
+            }
+        }
+
+        // Сохранение пациента
+        function savePatient() {
+            const id = document.getElementById('edit-id').value;
+            const ward = document.getElementById('edit-ward').value;
+            const bed = parseInt(document.getElementById('edit-bed').value);
+            const fio = document.getElementById('edit-fio').value.trim();
+            const age = parseInt(document.getElementById('edit-age').value);
+            const gender = document.getElementById('edit-gender').value;
+            const ib = document.getElementById('edit-ib').value.trim();
+            const diet = document.getElementById('edit-diet').value;
+            const payment = document.getElementById('edit-payment').value;
+            const admissionDate = document.getElementById('edit-admission-date').value;
+            const admissionTime = document.getElementById('edit-admission-time').value;
+            const diagnosis = document.getElementById('edit-diagnosis').value.trim() || 'Не указан';
+            const mkb = document.getElementById('edit-mkb').value.trim();
+            let pregnant = document.getElementById('edit-pregnant').value.trim();
+            let postpartum = document.getElementById('edit-postpartum').checked;
+            if (gender === 'М') { pregnant = ''; postpartum = false; }
+            let severity = document.getElementById('edit-severity').value;
+            const covid = document.getElementById('edit-covid').checked;
+            const hiv = document.getElementById('edit-hiv').checked;
+            const outOfRegion = document.getElementById('edit-out-of-region').checked;
+            let oxygenLiters = parseFloat(document.getElementById('edit-oxygen-liters').value);
+            if (isNaN(oxygenLiters) || oxygenLiters <= 0) oxygenLiters = 0;
+            if (oxygenLiters > 5) severity = 'тяжелая';
+
+            if (!fio || !ib || isNaN(age) || isNaN(bed)) { alert('Заполните основные поля'); return; }
+
+            if (id) {
+                const p = patients.find(x => x.id == id);
+                if (!p) return;
+                const oldDiag = p.diagnosis;
+                Object.assign(p, { fio, age, gender, ib, diet, payment, admissionDate, admissionTime, diagnosis, mkb, pregnant, severity, postpartum, covid, hiv, outOfRegion, oxygenLiters });
+                if (oldDiag !== diagnosis) {
+                    eventLog.push({ type:'diagnosis_change', patientId:p.id, fio, oldDiagnosis:oldDiag, newDiagnosis:diagnosis, date: new Date().toLocaleDateString('ru-RU'), time: new Date().toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) });
+                }
+            } else {
+                if (!ward || !bed) { alert('Выберите палату и койку'); return; }
+                const existing = patients.find(p => p.ward === ward && p.bed === bed);
+                if (existing && existing.status !== 'Отпущен') { alert('Койка занята'); return; }
+                if (existing && existing.status === 'Отпущен') {
+                    existing.ward = 'Резерв';
+                    existing.bed = getNextReserveBed();
+                }
+                const newPatient = {
+                    id: nextId++, ward, bed, fio, age, gender, ib, diet, payment, admissionDate, admissionTime, diagnosis, mkb,
+                    pregnant, severity, postpartum, covid, hiv, outOfRegion, oxygenLiters, status: 'В палате'
+                };
+                patients.push(newPatient);
+                eventLog.push({ type:'admission', patientId:newPatient.id, fio, ward, bed, diagnosis, date: admissionDate, time: admissionTime });
+            }
+            save(); closeEditModal(); renderAll();
+        }
+
+        // Отмена действий
+        function openUndoModal() {
+            const list = document.getElementById('event-log-list');
+            list.innerHTML = '';
+            if (eventLog.length === 0) { list.innerHTML = '<p>Журнал действий пуст.</p>'; }
+            else {
+                [...eventLog].reverse().forEach((entry, index) => {
+                    const div = document.createElement('div'); div.className = 'log-entry';
+                    let desc = '';
+                    switch (entry.type) {
+                        case 'admission': desc = `Поступление: ${entry.fio} в палату ${entry.ward}, койка ${entry.bed} (${entry.date} ${entry.time})`; break;
+                        case 'transfer_internal': desc = `Перевод внутри: ${entry.fio} из ${entry.fromWard} в ${entry.toWard} (${entry.date} ${entry.time})`; break;
+                        case 'transfer_out': desc = `Перевод в другое отд.: ${entry.fio} → ${entry.toDept} (${entry.date} ${entry.time})`; break;
+                        case 'release': desc = `Отпуск: ${entry.fio} (${entry.date} ${entry.time})`; break;
+                        case 'return_from_release': desc = `Возврат из отпуска: ${entry.fio} в палату ${entry.ward}, койка ${entry.bed} (${entry.date} ${entry.time})`; break;
+                        case 'discharge': desc = `Выписка: ${entry.fio} (${entry.date} ${entry.time})`; break;
+                        case 'deceased': desc = `Смерть: ${entry.fio} (${entry.date} ${entry.time})`; break;
+                        case 'diagnosis_change': desc = `Смена диагноза: ${entry.fio} с "${entry.oldDiagnosis}" на "${entry.newDiagnosis}" (${entry.date} ${entry.time})`; break;
+                        default: desc = JSON.stringify(entry);
+                    }
+                    div.innerHTML = `<span>${desc}</span> <button class="btn btn-sm btn-danger" onclick="undoAction(${eventLog.length - 1 - index})">Отменить</button>`;
+                    list.appendChild(div);
+                });
+            }
+            document.getElementById('undoModal').style.display = 'block';
+        }
+
+        function undoAction(logIndex) {
+            if (!confirm('Отменить это действие? Это может затронуть другие операции.')) return;
+            const entry = eventLog[logIndex];
+            eventLog.splice(logIndex, 1);
+            switch (entry.type) {
+                case 'admission':
+                    patients = patients.filter(p => p.id !== entry.patientId);
+                    break;
+                case 'transfer_internal': {
+                    const p = patients.find(x => x.id === entry.patientId);
+                    if (p) { p.ward = entry.fromWard; p.bed = entry.fromBed || 1; }
+                    break;
+                }
+                case 'transfer_out':
+                    alert('Для отмены перевода в другое отделение восстановите пациента вручную.');
+                    break;
+                case 'release': {
+                    const p = patients.find(x => x.id === entry.patientId);
+                    if (p) {
+                        p.status = 'В палате';
+                        const free = getFreeBeds(p.ward);
+                        if (free.length > 0) p.bed = free[0];
+                        else {
+                            const corridorFree = getFreeBeds('Коридор');
+                            if (corridorFree.length > 0) { p.ward = 'Коридор'; p.bed = corridorFree[0]; }
+                        }
+                    }
+                    break;
+                }
+                case 'return_from_release': {
+                    const p = patients.find(x => x.id === entry.patientId);
+                    if (p) { p.status = 'Отпущен'; p.ward = 'Резерв'; }
+                    break;
+                }
+                case 'discharge': {
+                    const disPatient = discharged.find(p => p.id === entry.patientId);
+                    if (disPatient) {
+                        discharged = discharged.filter(p => p.id !== entry.patientId);
+                        patients.push(disPatient);
+                    }
+                    break;
+                }
+                case 'deceased':
+                    alert('Восстановление удалённого пациента временно невозможно.');
+                    break;
+                case 'diagnosis_change': {
+                    const p = patients.find(x => x.id === entry.patientId);
+                    if (p) p.diagnosis = entry.oldDiagnosis;
+                    break;
+                }
+            }
+            save();
+            document.getElementById('undoModal').style.display = 'none';
+            renderAll();
+        }
+
+        function toggleInfectious(ward) { wardInfectious[ward] = !wardInfectious[ward]; save(); renderAll(); }
+
+        function changeCorridorBeds(delta) {
+            const newCount = WARD_CONFIG['Коридор'] + delta;
+            if (newCount < 0 || newCount > 6) return;
+            if (delta < 0) {
+                for (let b = newCount+1; b <= WARD_CONFIG['Коридор']; b++)
+                    if (patients.some(p => p.ward === 'Коридор' && p.bed === b && p.status !== 'Отпущен')) {
+                        alert('На удаляемых койках есть пациенты!'); return;
+                    }
+            }
+            WARD_CONFIG['Коридор'] = newCount;
+            save(); renderAll();
+        }
+
+        // Рендер таблицы
+        function renderAll() {
+            const tbody = document.getElementById('portion-table-body');
+            const search = document.getElementById('search-input').value.trim().toLowerCase();
+            tbody.innerHTML = '';
+
+            function renderWard(ward, totalBeds) {
+                const rowsData = [];
+                for (let bed = 1; bed <= totalBeds; bed++) {
+                    const p = patients.find(pat => pat.ward === ward && pat.bed === bed);
+                    rowsData.push({ bed, patient: p });
+                }
+                const filtered = search ? rowsData.filter(r => r.patient && r.patient.fio.toLowerCase().includes(search)) : rowsData;
+                if (search && filtered.length === 0) return;
+
+                const trList = [];
+                filtered.forEach((r) => {
+                    const tr = document.createElement('tr');
+                    const isFree = !r.patient;
+                    const isHome = r.patient && r.patient.status === 'Отпущен';
+                    let rowClass = isFree ? 'free-row' : (isHome ? 'released-row' : 'occupied-row');
+                    if (r.patient && r.patient.outOfRegion) rowClass += ' out-of-region-row';
+                    tr.className = rowClass;
+                    tr.dataset.ward = ward;
+
+                    tr.addEventListener('mouseenter', function() {
+                        this.classList.add('highlight');
+                        const wardCell = tbody.querySelector(`.ward-cell[data-ward="${ward}"]`);
+                        if (wardCell) wardCell.classList.add('highlight');
+                    });
+                    tr.addEventListener('mouseleave', function() {
+                        this.classList.remove('highlight');
+                        const wardCell = tbody.querySelector(`.ward-cell[data-ward="${ward}"]`);
+                        if (wardCell) wardCell.classList.remove('highlight');
+                    });
+
+                    tr.onclick = function(e) {
+                        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+                        if (isFree) openAddModal(ward, r.bed);
+                        else openEditModal(r.patient.id);
+                    };
+
+                    let marks = [];
+                    let dateStr = '';
+                    if (!isFree) {
+                        if (r.patient.admissionDate) {
+                            const parts = r.patient.admissionDate.split('-');
+                            if (parts.length === 3) dateStr = parts[2] + '.' + parts[1];
+                        }
+                        if (r.patient.pregnant) marks.push(`Берем. ${r.patient.pregnant}`);
+                        if (r.patient.postpartum) marks.push('Послерод.');
+                        if (r.patient.severity === 'тяжелая') marks.push('Тяжелая');
+                        if (r.patient.covid) marks.push('COVID-19');
+                        if (r.patient.hiv) marks.push('Ф-50');
+                        if (r.patient.oxygenLiters > 0) marks.push(`О2-${r.patient.oxygenLiters}л`);
+                    }
+
+                    tr.innerHTML = `
+                        <td>${r.bed}</td>
+                        <td>${isFree ? '— свободно —' : r.patient.fio}</td>
+                        <td>${isFree ? '' : r.patient.age}</td>
+                        <td>${isFree ? '' : r.patient.gender}</td>
+                        <td>${isFree ? '' : r.patient.ib}</td>
+                        <td>${isFree ? '' : (r.patient.diet || '')}</td>
+                        <td>${isFree ? '' : r.patient.payment}</td>
+                        <td>${isFree ? '' : dateStr}</td>
+                        <td>${isFree ? '' : r.patient.diagnosis}</td>
+                        <td>${isFree ? '' : (r.patient.mkb || '')}</td>
+                        <td>${isFree ? '' : (marks.join(', ') || '—')}</td>
+                    `;
+                    trList.push(tr);
+                });
+
+                if (trList.length === 0) return;
+
+                const firstTr = trList[0];
+                const tdWard = document.createElement('td');
+                tdWard.rowSpan = trList.length;
+                tdWard.className = 'ward-cell';
+                tdWard.dataset.ward = ward;
+                if (ward === 'Коридор') {
+                    tdWard.innerHTML = `Коридор <span class="ward-controls"><button onclick="event.stopPropagation(); changeCorridorBeds(-1)">−</button><button onclick="event.stopPropagation(); changeCorridorBeds(1)">+</button></span>`;
+                } else {
+                    tdWard.textContent = ward;
+                }
+                if (wardInfectious[ward]) { tdWard.classList.add('ward-infectious'); tdWard.textContent += ' ⚠'; }
+                tdWard.onclick = function(e) { e.stopPropagation(); toggleInfectious(ward); };
+                firstTr.insertBefore(tdWard, firstTr.firstChild);
+
+                trList.forEach(tr => tbody.appendChild(tr));
+            }
+
+            WARD_ORDER.forEach(ward => { if (ward !== 'Резерв') renderWard(ward, WARD_CONFIG[ward]); });
+
+            // Резерв – только занятые койки, без пустых
+            const reservePatients = patients.filter(p => p.ward === 'Резерв').sort((a, b) => a.bed - b.bed);
+            if (reservePatients.length > 0) {
+                const trList = [];
+                reservePatients.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'released-row';
+                    if (p.outOfRegion) tr.classList.add('out-of-region-row');
+                    tr.dataset.ward = 'Резерв';
+                    tr.addEventListener('mouseenter', function() {
+                        this.classList.add('highlight');
+                        const wardCell = tbody.querySelector('.ward-cell[data-ward="Резерв"]');
+                        if (wardCell) wardCell.classList.add('highlight');
+                    });
+                    tr.addEventListener('mouseleave', function() {
+                        this.classList.remove('highlight');
+                        const wardCell = tbody.querySelector('.ward-cell[data-ward="Резерв"]');
+                        if (wardCell) wardCell.classList.remove('highlight');
+                    });
+                    tr.onclick = () => openEditModal(p.id);
+
+                    let marks = [];
+                    let dateStr = '';
+                    if (p.admissionDate) {
+                        const parts = p.admissionDate.split('-');
+                        if (parts.length === 3) dateStr = parts[2] + '.' + parts[1];
+                    }
+                    if (p.pregnant) marks.push(`Берем. ${p.pregnant}`);
+                    if (p.postpartum) marks.push('Послерод.');
+                    if (p.severity === 'тяжелая') marks.push('Тяжелая');
+                    if (p.covid) marks.push('COVID-19');
+                    if (p.hiv) marks.push('Ф-50');
+                    if (p.oxygenLiters > 0) marks.push(`О2-${p.oxygenLiters}л`);
+
+                    tr.innerHTML = `
+                        <td>${p.bed}</td>
+                        <td>${p.fio}</td>
+                        <td>${p.age}</td>
+                        <td>${p.gender}</td>
+                        <td>${p.ib}</td>
+                        <td>${p.diet || ''}</td>
+                        <td>${p.payment}</td>
+                        <td>${dateStr}</td>
+                        <td>${p.diagnosis}</td>
+                        <td>${p.mkb || ''}</td>
+                        <td>${marks.join(', ') || '—'}</td>
+                    `;
+                    trList.push(tr);
+                });
+
+                const firstTr = trList[0];
+                const tdWard = document.createElement('td');
+                tdWard.rowSpan = trList.length;
+                tdWard.className = 'ward-cell';
+                tdWard.dataset.ward = 'Резерв';
+                tdWard.textContent = 'Резерв';
+                tdWard.onclick = function(e) { e.stopPropagation(); /* заразность для резерва не имеет смысла */ };
+                firstTr.insertBefore(tdWard, firstTr.firstChild);
+
+                trList.forEach(tr => tbody.appendChild(tr));
+            }
+        }
+
+        function updatePrintDate() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            document.getElementById('print-date').textContent = `на ${day}.${month}.${year}`;
+        }
+
+        window.onload = function() {
+            document.getElementById('display-date').textContent = new Date().toLocaleDateString('ru-RU');
+            updatePrintDate();
+            load();
+            renderAll();
+        };
+    </script>
+</body>
+</html>
